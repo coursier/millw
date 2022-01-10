@@ -1,11 +1,12 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
-# This is a wrapper script, that automatically download mill from GitHub release pages
+# This is a wrapper script, that automatically download mill via coursier
 # You can give the required mill version with --mill-version parameter
 # If no version is given, it falls back to the value of DEFAULT_MILL_VERSION
 #
-# Project page: https://github.com/lefou/millw
-# Script Version: 0.4.0
+# Project page: https://github.com/coursier/millw
+# Original project page: https://github.com/lefou/millw
+# Script Version: 0.4.0-cs
 #
 # If you want to improve this script, please also contribute your changes back!
 #
@@ -68,7 +69,7 @@ if [ "x${MILL_VERSION}" = "x" ] ; then
     # to show the (previously suppressed) error message
     LANG=C touch -d '1 hour ago' "${MILL_DOWNLOAD_PATH}/.expire_latest"
   )
-  
+
   if [ "${MILL_DOWNLOAD_PATH}/.latest" -nt "${MILL_DOWNLOAD_PATH}/.expire_latest" ] ; then
     # we know a current latest version
     MILL_VERSION="$(head -n 1 ${MILL_DOWNLOAD_PATH}/.latest 2> /dev/null)"
@@ -90,47 +91,106 @@ if [ "x${MILL_VERSION}" = "x" ] ; then
   fi
 fi
 
-MILL="${MILL_DOWNLOAD_PATH}/${MILL_VERSION}"
-
-# If not already downloaded, download it
-if [ ! -s "${MILL}" ] ; then
-  
-  # support old non-XDG download dir
-  MILL_OLD_DOWNLOAD_PATH="${HOME}/.mill/download"
-  OLD_MILL="${MILL_OLD_DOWNLOAD_PATH}/${MILL_VERSION}"
-  if [ -x "${OLD_MILL}" ] ; then
-    MILL="${OLD_MILL}"
-  else
-    VERSION_PREFIX="$(echo -n $MILL_VERSION | cut -b -4)"
-    case $VERSION_PREFIX in
-      0.0. | 0.1. | 0.2. | 0.3. | 0.4. )
-        DOWNLOAD_SUFFIX=""
-        ;;
-      *)
-        DOWNLOAD_SUFFIX="-assembly"
-        ;;
-    esac
-    unset VERSION_PREFIX
-
-    DOWNLOAD_FILE=$(mktemp mill.XXXXXX)
-    # TODO: handle command not found
-    echo "Downloading mill ${MILL_VERSION} from ${MILL_REPO_URL}/releases ..." 1>&2
-    MILL_VERSION_TAG=$(echo $MILL_VERSION | sed -E 's/([^-]+)(-M[0-9]+)?(-.*)?/\1\2/')
-    ${CURL_CMD} -f -L -o "${DOWNLOAD_FILE}" "${MILL_REPO_URL}/releases/download/${MILL_VERSION_TAG}/${MILL_VERSION}${DOWNLOAD_SUFFIX}"
-    chmod +x "${DOWNLOAD_FILE}"
-    mkdir -p "${MILL_DOWNLOAD_PATH}"
-    mv "${DOWNLOAD_FILE}" "${MILL}"
-
-    unset DOWNLOAD_FILE
-    unset DOWNLOAD_SUFFIX
-  fi
-fi
-
 unset MILL_DOWNLOAD_PATH
 unset MILL_OLD_DOWNLOAD_PATH
 unset OLD_MILL
-unset MILL_VERSION
 unset MILL_VERSION_TAG
 unset MILL_REPO_URL
 
-exec $MILL "$@"
+if [ "x$1" == "x-i" -o "x$1" == "x--interactive" ]; then
+  MILL_APP_NAME="mill-interactive"
+else
+  MILL_APP_NAME="mill"
+fi
+
+mill_cs_opts=()
+
+# Adapted from Mill 0.10.0-M5 assembly
+init_mill_jvm_opts() {
+  if [ -z $MILL_JVM_OPTS_PATH ] ; then
+    mill_jvm_opts_file=".mill-jvm-opts"
+  else
+    mill_jvm_opts_file=$MILL_JVM_OPTS_PATH
+  fi
+
+  if [ -f "$mill_jvm_opts_file" ] ; then
+    while IFS= read line
+    do
+      case $line in
+        "-X"*) mill_cs_opts=("${mill_cs_opts[@]}" "--java-opt" "$line")
+      esac
+    done <"$mill_jvm_opts_file"
+  fi
+}
+
+init_mill_cs_opts() {
+  if [ -z $MILL_CS_OPTS_PATH ] ; then
+    mill_cs_opts_file=".mill-cs-opts"
+  else
+    mill_cs_opts_file=$MILL_CS_OPTS_PATH
+  fi
+
+  if [ -f "$mill_cs_opts_file" ] ; then
+    while IFS= read line
+    do
+      case $line in
+        "#"*) ;;
+        *) mill_cs_opts=("${mill_cs_opts[@]}" "$line") ;;
+      esac
+    done <"$mill_cs_opts_file"
+  fi
+}
+
+
+# Adapted from
+
+coursier_version="2.1.0-M2"
+
+# https://stackoverflow.com/questions/3466166/how-to-check-if-running-in-cygwin-mac-or-linux/17072017#17072017
+if [ "$(expr substr $(uname -s) 1 5 2>/dev/null)" == "Linux" ]; then
+  cs_url="https://github.com/coursier/coursier/releases/download/v$coursier_version/cs-x86_64-pc-linux.gz"
+  cache_base="$HOME/.cache/coursier/v1"
+elif [ "$(uname)" == "Darwin" ]; then
+  cs_url="https://github.com/coursier/coursier/releases/download/v$coursier_version/cs-x86_64-apple-darwin.gz"
+  cache_base="$HOME/Library/Caches/Coursier/v1"
+else
+  # assuming Windows…
+  cs_url="https://github.com/coursier/coursier/releases/download/v$coursier_version/cs-x86_64-pc-win32.zip"
+  cache_base="$LOCALAPPDATA/Coursier/v1" # TODO Check that
+  ext=".exe"
+  do_chmod="0"
+fi
+
+cache_dest="$cache_base/$(echo "$cs_url" | sed 's@://@/@')"
+
+if [ ! -f "$cache_dest" ]; then
+  mkdir -p "$(dirname "$cache_dest")"
+  tmp_dest="$cache_dest.tmp-setup"
+  echo "Downloading $cs_url"
+  curl -fLo "$tmp_dest" "$cs_url"
+  mv "$tmp_dest" "$cache_dest"
+fi
+
+if [[ "$cache_dest" == *.gz ]]; then
+  cs="$(dirname "$cache_dest")/$(basename "$cache_dest" .gz)"
+  if [ ! -f "$cs" ]; then
+    gzip -d < "$cache_dest" > "$cs"
+  fi
+  if [ ! -x "$cs" ]; then
+    chmod +x "$cs"
+  fi
+elif [[ "$cache_dest" == *.zip ]]; then
+  cs="$(dirname "$cache_dest")/$(basename "$cache_dest" .zip).exe"
+  if [ ! -f "$cs" ]; then
+    unzip -p "$cache_dest" "$(basename "$cache_dest" .zip).exe" > "$cs"
+  fi
+fi
+
+export PATH=".:$PATH"
+
+
+
+init_mill_jvm_opts
+init_mill_cs_opts
+
+exec "$cs" launch "$MILL_APP_NAME:$MILL_VERSION" "${mill_cs_opts[@]}" -- "$@"

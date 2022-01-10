@@ -1,15 +1,16 @@
-= Mill Wrapper Script
+= Mill Wrapper Script - Coursier-based
 :mill-version: 0.9.9
 :mill-url: https://github.com/com-lihaoyi/mill
+:coursier-url: https://github.com/coursier/coursier
 :toc:
 :toc-placement: preamble
 
-Small script to automatically fetch and execute {mill-url}[mill build tool].
+Small script to automatically fetch and execute {mill-url}[mill build tool] using {coursier-url}[Coursier].
 
 == How it works
 
 `millw` is a small wrapper script around mill and works almost identical to mill.
-It automatically downloads the correct mill version (into `${XDG_CACHE_DIR}/mill/download` or `~/.cache/mill/download`).
+It automatically downloads the correct mill version (as a set of thin JARs in the coursier cache).
 
 I recommend to rename the tool to just `mill`.
 It is designed to be a drop-in replacement for the official mill binary.
@@ -96,6 +97,10 @@ def millw() = T.command {
 Published under the https://www.apache.org/licenses/LICENSE-2.0[Apache Licencse, Version 2.0].
 
 == Changelog
+
+=== millw 0.4.0-cs - 2022-01-10
+
+* Coursier-based version - uses coursier under-the-hood to download the Mill class path as a set of thin JARs
 
 === millw 0.4.0 - 2021-12-22
 
