@@ -1,3 +1,15 @@
+ifdef::env-github[]
+:warning-caption: :warning:
+endif::[]
+
+[WARNING]
+====
+*This repository is now archived.*
+
+This repository has not been updated for a while. Use the official Mill script from the Mill repository,
+even though it doesn't rely on coursier to download the Mill binary.
+====
+
 = Mill Wrapper Script - Coursier-based
 :mill-version: 0.9.9
 :mill-url: https://github.com/com-lihaoyi/mill
